@@ -1,19 +1,19 @@
-# Python virtual environments
+# virtual envs
 venv/
 .venv/
 
-# Python cache / compiled files
+# python cache
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
 
-# Distribution / packaging
+# dist
 *.egg-info/
 build/
 dist/
 
-# OS / Editor cruft
+# OS/IDE
 .DS_Store
 .idea/
 .vscode/

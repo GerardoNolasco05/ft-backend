@@ -12,10 +12,13 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me')
 
-    # Prefer DATABASE_URL (Render Postgres). Fallback to an on-disk SQLite in /tmp (writable on Render).
+    # Prefer DATABASE_URL from Render; else use SQLite in /tmp (writable on Render)
     database_url = os.getenv('DATABASE_URL')
     if database_url:
-        # SQLAlchemy 2.x expects postgresql+psycopg etc; Render usually supplies a ready URL
+        database_url = database_url.strip()
+        # Old alias "postgres://" -> SQLAlchemy wants "postgresql://"
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
         app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     else:
         os.makedirs('/tmp/proft', exist_ok=True)
@@ -44,11 +47,23 @@ def create_app():
     def home():
         return "Welcome to ProFT API!"
 
+    # --- TEMP: DB debug endpoint (remove after you verify) ---
+    from sqlalchemy import text
+    @app.get('/debug/db')
+    def debug_db():
+        try:
+            url = db.engine.url.render_as_string(hide_password=True)
+            with db.engine.connect() as conn:
+                conn.execute(text("select 1"))
+            return {"ok": True, "db_url": url}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}, 500
+    # ----------------------------------------------------------
+
     return app
 
 # WSGI entrypoint for gunicorn
 app = create_app()
 
 if __name__ == '__main__':
-    # local dev only
     app.run(debug=True, port=5000)
