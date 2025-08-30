@@ -9,3 +9,9 @@ __pycache__/
 # misc
 .DS_Store
 .idea/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
