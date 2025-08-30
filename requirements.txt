@@ -10,3 +10,4 @@ geopy==2.4.1
 geographiclib==2.0
 timezonefinder==6.6.3
 pytz==2025.2
+h3==4.3.0
