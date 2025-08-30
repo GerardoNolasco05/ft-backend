@@ -1,2 +1,19 @@
+# Python virtual environments
 venv/
 .venv/
+
+# Python cache / compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Distribution / packaging
+*.egg-info/
+build/
+dist/
+
+# OS / Editor cruft
+.DS_Store
+.idea/
+.vscode/
