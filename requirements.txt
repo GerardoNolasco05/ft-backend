@@ -9,3 +9,4 @@ psycopg2-binary==2.9.9
 geopy==2.4.1
 geographiclib==2.0
 timezonefinder==6.6.3
+pytz==2025.2
