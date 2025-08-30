@@ -1,17 +1,2 @@
-# virtual envs
 venv/
 .venv/
-
-# python cache
-__pycache__/
-*.pyc
-
-# misc
-.DS_Store
-.idea/
-venv/
-.venv/
-__pycache__/
-*.pyc
-.DS_Store
-.idea/
