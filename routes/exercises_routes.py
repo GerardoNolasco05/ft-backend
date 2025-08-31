@@ -1,100 +1,104 @@
-# exercises-routes.py
-from flask import Blueprint, jsonify, request, abort
+# exercises_routes.py
+from flask import Blueprint, jsonify, request
+from sqlalchemy.orm import joinedload
+
 from models.exercise_model import Exercise
 from models.load_weight_model import LoadWeight
 
-exercises_bp = Blueprint('exercises', __name__, url_prefix='/exercises')
+exercises_bp = Blueprint("exercises", __name__, url_prefix="/exercises")
 
 
-@exercises_bp.route('/', methods=['GET'])
+def eager_options():
+    """
+    Eager-load all relationships we serialize to avoid N+1 queries.
+    """
+    return (
+        joinedload(Exercise.load_type),
+        joinedload(Exercise.muscular_groups),
+        joinedload(Exercise.primary_muscles),
+        joinedload(Exercise.secondary_muscles),
+        joinedload(Exercise.joint_actions),
+        joinedload(Exercise.equipments),
+    )
+
+
+@exercises_bp.route("/", methods=["GET"])
 def list_exercises():
-    # minimal list for index / navigation
-    rows = Exercise.query.with_entities(
-        Exercise.id, Exercise.name, Exercise.load_type_id
-    ).all()
-    return jsonify([
-        {'id': r.id, 'name': r.name, 'load_type_id': r.load_type_id}
-        for r in rows
-    ]), 200
+    """
+    GET /exercises/            -> minimal list (id, name, load_type_id)
+    GET /exercises/?full=1     -> full list with all fields (uses Exercise.to_dict)
+    Optional: basic pagination ?page=1&page_size=50 (works for both modes)
+    """
+    full = (request.args.get("full") or "").lower() in ("1", "true", "yes")
+
+    # pagination (optional)
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except ValueError:
+        page = 1
+    try:
+        page_size = max(min(int(request.args.get("page_size", 100)), 500), 1)
+    except ValueError:
+        page_size = 100
+
+    query = Exercise.query
+    if full:
+        # only eager load when we need full objects
+        for opt in eager_options():
+            query = query.options(opt)
+
+    # simple pagination
+    items = (
+        query.order_by(Exercise.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    if full:
+        return jsonify([e.to_dict() for e in items]), 200
+
+    # minimal list for fast navigation
+    return jsonify(
+        [{"id": e.id, "name": e.name, "load_type_id": e.load_type_id} for e in items]
+    ), 200
 
 
-@exercises_bp.route('/<int:exercise_id>', methods=['GET'])
+@exercises_bp.route("/<int:exercise_id>/", methods=["GET"])
 def get_exercise(exercise_id: int):
     """
-    Full detail for a single exercise.
-    Prefer Exercise.to_dict() if the model defines it; otherwise build a rich dict.
+    Full detail for a single exercise (always full).
     """
-    ex = Exercise.query.get_or_404(exercise_id)
+    query = Exercise.query
+    for opt in eager_options():
+        query = query.options(opt)
 
-    # If your model already has a serializer, use it
-    if hasattr(ex, "to_dict") and callable(getattr(ex, "to_dict")):
-        data = ex.to_dict()
-        return jsonify(data), 200
-
-    # Fallback serializer (covers common fields + many-to-many names)
-    def pick(obj, *fields):
-        out = {}
-        for f in fields:
-            out[f] = getattr(obj, f, None)
-        return out
-
-    def names(seq):
-        try:
-            return [{'id': x.id, 'name': getattr(x, 'name', None)} for x in (seq or [])]
-        except Exception:
-            return []
-
-    data = {
-        'id': ex.id,
-        'name': ex.name,
-        # simple fields (adjust names if your model differs)
-        **pick(ex,
-               'movement_category',
-               'body_part',
-               'movement_pattern',
-               'resistance_modality',
-               'training_type',
-               'muscle_action',
-               'joint_involvement',
-               'plane_of_motion',    # try to include both spellings
-        ),
-        'plane_motion': getattr(ex, 'plane_motion', None),  # some models use this name
-        'image_url': getattr(ex, 'image_url', None),
-
-        # related single object
-        'load_type': (
-            {'id': ex.load_type.id, 'name': ex.load_type.name}
-            if getattr(ex, 'load_type', None) else None
-        ),
-
-        # many-to-many collections (adjust attribute names if different in your model)
-        'primary_muscles':   names(getattr(ex, 'primary_muscles',   [])),
-        'secondary_muscles': names(getattr(ex, 'secondary_muscles', [])),
-        'muscular_groups':   names(getattr(ex, 'muscular_groups',   [])),
-        'joint_actions':     names(getattr(ex, 'joint_actions',     [])),
-        'equipments':        names(getattr(ex, 'equipments',        [])),
-    }
-    return jsonify(data), 200
+    ex = query.get_or_404(exercise_id)
+    return jsonify(ex.to_dict()), 200
 
 
-@exercises_bp.route('/<int:exercise_id>/weights', methods=['GET'])
+@exercises_bp.route("/<int:exercise_id>/weights", methods=["GET"])
 def exercise_weights(exercise_id: int):
-    unit = (request.args.get('unit') or 'kg').lower()
-    if unit not in ('kg', 'lbs'):
-        unit = 'kg'
+    """
+    GET /exercises/<id>/weights?unit=kg|lbs
+    """
+    unit = (request.args.get("unit") or "kg").lower()
+    if unit not in ("kg", "lbs"):
+        unit = "kg"
 
-    ex = Exercise.query.get_or_404(exercise_id)
+    # we only need load_type_id here; to keep it simple reuse the eager query
+    query = Exercise.query
+    for opt in eager_options():
+        query = query.options(opt)
+    ex = query.get_or_404(exercise_id)
+
     q = (
         LoadWeight.query
-        .filter(LoadWeight.load_type_id == ex.load_type_id,
-                LoadWeight.unit == unit)
+        .filter(LoadWeight.load_type_id == ex.load_type_id, LoadWeight.unit == unit)
         .order_by(LoadWeight.value.asc())
     )
     rows = q.all()
-    return jsonify([{
-        'id': w.id,
-        'value': w.value,
-        'unit': w.unit,
-        'load_type_id': w.load_type_id
-    } for w in rows]), 200
+    return jsonify(
+        [{"id": w.id, "value": w.value, "unit": w.unit, "load_type_id": w.load_type_id} for w in rows]
+    ), 200
 
