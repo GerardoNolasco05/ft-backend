@@ -1,4 +1,3 @@
-# app.py
 import os
 from flask import Flask
 from flask_cors import CORS
@@ -12,12 +11,12 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me')
 
-    # Prefer DATABASE_URL from Render; else use SQLite in /tmp (writable on Render)
+    # Prefer DATABASE_URL (Render Postgres). Fallback to SQLite in /tmp (Render’s writable dir)
     database_url = os.getenv('DATABASE_URL')
     if database_url:
         database_url = database_url.strip()
-        # Old alias "postgres://" -> SQLAlchemy wants "postgresql://"
         if database_url.startswith("postgres://"):
+            # Normalize to SQLAlchemy’s expected prefix
             database_url = database_url.replace("postgres://", "postgresql://", 1)
         app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     else:
@@ -26,7 +25,14 @@ def create_app():
 
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-    CORS(app, resources={r"/*": {"origins": os.getenv("CORS_ORIGINS", "*")}})
+    # --- CORS setup (supports multiple comma-separated origins) ---
+    origins_env = os.getenv("CORS_ORIGINS", "*")
+    if origins_env == "*":
+        origins = "*"
+    else:
+        origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+    CORS(app, resources={r"/*": {"origins": origins}})
+    # -------------------------------------------------------------
 
     db.init_app(app)
     with app.app_context():
@@ -47,7 +53,7 @@ def create_app():
     def home():
         return "Welcome to ProFT API!"
 
-    # --- TEMP: DB debug endpoint (remove after you verify) ---
+    # --- TEMP: DB debug endpoint ---
     from sqlalchemy import text
     @app.get('/debug/db')
     def debug_db():
@@ -58,12 +64,14 @@ def create_app():
             return {"ok": True, "db_url": url}
         except Exception as e:
             return {"ok": False, "error": str(e)}, 500
-    # ----------------------------------------------------------
+    # -------------------------------
 
     return app
+
 
 # WSGI entrypoint for gunicorn
 app = create_app()
 
 if __name__ == '__main__':
+    # local dev only
     app.run(debug=True, port=5000)
